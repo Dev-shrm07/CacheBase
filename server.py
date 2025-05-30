@@ -1,6 +1,7 @@
 import socket
 import threading
 from resp import RESP_PARSER
+import time
 from typing import List
 from store import CACHE_STORE
 
@@ -12,16 +13,18 @@ class CACHE_SERVER:
         self.max_clients = max_clients
         self.store = CACHE_STORE()
         self.clients:List[socket.socket]=[]
-        
         self.server_socket = None
         self.running = False
+        self.blocked_clients = {}
+        self.blocking_lock = threading.Lock()
         
+    
     
     def start(self):
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
         self.server_socket.bind((self.host,self.port))
-        self.server_socket.listen(5)
+        self.server_socket.listen(self.max_clients)
         self.running = True
         
         print(f"The cache server is running live at host : {self.host} and port : {self.port}")
@@ -47,7 +50,7 @@ class CACHE_SERVER:
     
     
     def shutdown(self):
-        #self.save_data()
+        self.clean_expired_keys()
         
         for client in self.clients:
             client.close()
@@ -60,6 +63,8 @@ class CACHE_SERVER:
         
         print('Server has been shut down')
         
+    
+
         
     def handle_client(self,client_socket,address):
         print(f"New client connected from address {address}")
@@ -72,10 +77,12 @@ class CACHE_SERVER:
                         break
                         
                     parsed = RESP_PARSER.parse(data)
-                    print(parsed)
                     command = parsed[0]
                     response = self.execute_command(command,parsed[1:])
+                    if response is None:
+                        response = f"ERROR IN COMMAND {command}"
                     response_to_send = RESP_PARSER.encode(response)
+                    
                     client_socket.send(response_to_send)
                     
                 
@@ -101,7 +108,7 @@ class CACHE_SERVER:
             
     
     def execute_command(self, command, args):
-        print(command,args)
+
         
         if command is None or not isinstance(command,str):
             return "ERROR: Not a valid command"
@@ -109,30 +116,194 @@ class CACHE_SERVER:
         if command =="PING":
             return "PONG"
         elif command == "GET":
+            return self.cmd_get(args)
+        elif command == "SET":
+            return self.cmd_set(args)
+        elif command == "DEL":
+            return self.cmd_del(args)
+        
+        elif command =='EXPIRE':
+            return self.cmd_expire(args)
+        
+        elif command == "TYPE":
+            return self.cmd_type(args)
+        
+        elif command == "XADD":
+            return self.cmd_xadd(args)
+        
+        elif command == "XRANGE":
+            return self.cmd_xrange(args)
+        
+        elif command =='XREAD':
+            return self.cmd_xread(args)
+        
+        elif command =="XLEN":
+            return self.cmd_xlen(args)
+        
+        elif command == "XDEL":
+            return self.cmd_xdel(args)
+        
+        elif command == "ECHO":
             if len(args)<1:
+                return "ERROR: Insufficient Data"
+            return " ".join(args)
+        
+        else:
+            return 'ERROR: Not a valid command'
+        
+    
+    
+    
+    def cmd_xadd(self,args):
+        if len(args)<4:
+            return "ERROR: Insufficient values"
+        
+        key = args[0]
+        if args[1]=="MAXLEN":
+            if args[2]=='~':
+                lim = args[3]
+                if not isinstance(lim,int):
+                    return "ERROR: Invalid Limit"
+                id = args[4]
+                if len(args[5:])%2!=0:
+                    return "ERROR: Invalid entry for stream"
+                
+                return self.store.xadd(key=key,id=id,maxLen=lim,Fields=args[5:],Approx=True)
+            
+            else:
+                lim = args[2]
+                if not isinstance(lim,int):
+                    return "ERROR: Invalid Limit"
+                id = args[3]
+                if len(args[4:])%2!=0:
+                    return "ERROR: Invalid entry for stream"
+                
+                return self.store.xadd(key=key,id=id,maxLen=lim,Fields=args[4:])
+            
+        id = args[1]
+        if len(args[2:])%2!=0:
+                    return "ERROR: Invalid entry for stream"
+                
+        return self.store.xadd(key=key,id=id,Fields=args[2:])
+    
+    
+    def cmd_xrange(self,args):
+        if len(args)<3:
+            return "ERROR: Invalid command"
+        
+        if len(args)==3:
+            return self.store.xrange(key=args[0],start=args[1],end=args[2])
+        
+        elif len(args)==5:
+            if not isinstance(args[4],int):
+                return "ERROR: Invalid count"
+            return self.store.xrange(key=args[0],start=args[1],end=args[2],count=args[4])
+        
+        return "ERROR: Invalid Command"
+    
+    def cmd_xread(self,args):
+        if len(args)<3:
+            return "ERROR: Invalid command"
+        
+        if args[0]!="STREAMS":
+            return "ERROR: Invalid command"
+        
+        if args[1]=='COUNT':
+            if len(args)<5:
+                return "ERROR: Invalid command"
+            lim = args[2]
+            if not isinstance(lim,int):
+                return "ERROR: Invalid limit"
+            
+            if len(args[3:])%2!=0:
+                return "ERROR: Invalid command"
+            data = args[3:]
+            keys = data[::2]
+            ids = data[1::2]
+            
+            return self.store.xread(keys=keys,ids=ids,count=lim)
+        
+        
+       
+        if len(args)<3:
+            return "ERROR: Invalid command"
+           
+            
+        if len(args[1:])%2!=0:
+            return "ERROR: Invalid command"
+        data = args[1:]
+        keys = data[::2]
+        ids = data[1::2]
+            
+        return self.store.xread(keys=keys,ids=ids)    
+        
+  
+    
+    
+    
+    
+    def cmd_xlen(self,args):
+        if len(args)<1:
+            return "ERROR: Insufficient Values"
+        return self.store.xlen(args[0])
+        
+        
+    def cmd_xdel(self,args):
+        if len(args)<2:
+            return "ERROR: Insufficient values"
+        key = args[0]
+        return self.store.xdel(key=key,ids=args[1:])
+    
+    def cmd_type(self,args):
+        if len(args)<1:
+            return "ERROR: Insufficient values"
+        return self.store.get_type(args[0])
+    
+    
+    def cmd_expire(self,args):
+        if len(args)!=2:
+            return "ERROR: Incorrect format"
+
+        if not isinstance(args[1],float) and not isinstance(args[1],int):
+            return "ERROR: Invalid value for time"
+        
+        return self.store.expire(args[0],args[1])
+
+    def cmd_del(self,args):
+        if len(args)<1:
                 return "ERROR: No key provided"
             
-            return self.store.get(args[0])
-        elif command == "SET":
-            if len(args)<2:
+        return self.store.delete(args)
+        
+    def cmd_set(self,args):
+        if len(args)<2:
                 return "ERROR: Insufficient values"
             
-            elif len(args) == 2:
+        elif len(args) == 2:
                 return self.store.set(args[0],args[1])
             
-            elif len(args) == 4:
+        elif len(args) == 4:
                 if args[2].upper() == "EX" and (isinstance(args[3],int) or isinstance(args[3],float)):
                     return self.store.set(key=args[0],val=args[1],ex=args[3])
                 else:
                     return "ERROR: Insufficient values"
-        elif command == "DEL":
-            if len(args)<1:
-                return "ERROR: No key provided"
+                
+    def cmd_get(self,args):
+        if len(args)<1:
+            return "ERROR: No key provided"
             
-            return self.store.delete(args[0])
-        
-        else:
-            return 'ERROR: Not a valid command'
+        return self.store.get(args[0])
+    
+    def clean_expired_keys(self):
+        while self.running:
+            try:
+                self.store.clean_up_expired_keys()
+                self.running = False
+                time.sleep(2)
+            
+            except Exception as e:
+                print(f"Error in cleanup thread: {e}")
+                time.sleep(5)
             
             
             
