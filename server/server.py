@@ -1,13 +1,14 @@
 import socket
 import threading
-from resp import RESP_PARSER
+from utils.resp import RESP_PARSER
 import time
 from typing import List
-from store import CACHE_STORE
+from data.store import CACHE_STORE
+from utils.logger import LOGGER
 
 
 class CACHE_SERVER:
-    def __init__(self,host='localhost',port=6379,max_clients = 5):
+    def __init__(self,log_file_path,host='localhost',port=6379,max_clients = 5):
         self.host = host
         self.port = port
         self.max_clients = max_clients
@@ -17,6 +18,9 @@ class CACHE_SERVER:
         self.running = False
         self.blocked_clients = {}
         self.blocking_lock = threading.Lock()
+        self.logger =LOGGER(log_file_path)
+        self.expiry_thread = None
+
         
     
     
@@ -26,8 +30,10 @@ class CACHE_SERVER:
         self.server_socket.bind((self.host,self.port))
         self.server_socket.listen(self.max_clients)
         self.running = True
+        self.expiry_thread = threading.Thread(target=self.clean_expired_keys,daemon=True)
+        self.expiry_thread.start()
         
-        print(f"The cache server is running live at host : {self.host} and port : {self.port}")
+        self.logger.info(f"The cache server is running live at host : {self.host} and port : {self.port}")
         
         try:
             while self.running:
@@ -40,10 +46,10 @@ class CACHE_SERVER:
                 
                 except Exception as e:
                     if self.running:
-                        print(f'Error excepting the client {str(e)}')
+                        self.logger.exception(f'Error excepting the client {str(e)}')
         
         except KeyboardInterrupt:
-            print('Shutting Down the server')
+            self.logger.exception('Shutting Down the server')
             
         finally:
             self.shutdown()
@@ -61,13 +67,13 @@ class CACHE_SERVER:
         self.running = False
             
         
-        print('Server has been shut down')
+        self.logger.info('Server has been shut down')
         
     
 
         
     def handle_client(self,client_socket,address):
-        print(f"New client connected from address {address}")
+        self.logger.info(f"New client connected from address {address}")
         
         threading.current_thread().client_socket = client_socket
         try:
@@ -82,6 +88,9 @@ class CACHE_SERVER:
                     response = self.execute_command(command,parsed[1:])
                     if response is None:
                         response = f"ERROR IN COMMAND {command}"
+                    
+                    if response.startswith("ERROR"):
+                        self.logger.error(f"{response} client :{address}")
                     response_to_send = RESP_PARSER.encode(response)
                     
                     client_socket.send(response_to_send)
@@ -97,7 +106,7 @@ class CACHE_SERVER:
                         pass
                 
         except Exception as e:
-            print(f"Error {str(e)}")
+            self.logger.exception(f"Error {str(e)}")
         
         finally:
             with self.blocking_lock:
@@ -109,7 +118,7 @@ class CACHE_SERVER:
                 
             client_socket.close()
             
-            print(f'Client {address} disconnected from server')
+            self.logger.info(f'Client {address} disconnected from server')
             
     
     def execute_command(self, command, args):
@@ -272,7 +281,6 @@ class CACHE_SERVER:
     
     def wait_and_block(self,keys,ids,count,block):
         client_socket = getattr(threading.current_thread(),'client_socket',None)
-
         if not client_socket:
             return "ERROR: Client socket not found for blocking"
         with self.blocking_lock:
@@ -286,7 +294,9 @@ class CACHE_SERVER:
         
         try:
             if block == 0:
+                self.logger.info(f'A client is being waited')
                 while True:
+                    
                     self.blocked_clients[client_socket]['event'].wait()
                     self.blocked_clients[client_socket]['event'].clear()
                     result = self.store.xread(keys=keys,ids=ids,count=count)
@@ -296,7 +306,7 @@ class CACHE_SERVER:
             else:
                 timeout = block/1000
                 start_time = time.time()
-                
+                self.logger.info(f'A client is being waited')
                 while time.time()-start_time<timeout:
                     remaining_time = timeout-(time.time()-start_time)
                     if self.blocked_clients[client_socket]['event'].wait(timeout=remaining_time):
@@ -387,11 +397,10 @@ class CACHE_SERVER:
         while self.running:
             try:
                 self.store.clean_up_expired_keys()
-                self.running = False
-                time.sleep(2)
+                time.sleep(5)
             
             except Exception as e:
-                print(f"Error in cleanup thread: {e}")
+                self.logger.exception(f"Error in cleanup thread: {e}")
                 time.sleep(5)
             
             

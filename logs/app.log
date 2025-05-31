@@ -1,0 +1,34 @@
+2025-05-31 18:49:17,470 | INFO | cache_base | The cache server is running live at host : localhost and port : 6379
+2025-05-31 18:49:17,471 | INFO | cache_base | Server has been shut down
+2025-05-31 18:49:23,414 | INFO | cache_base | The cache server is running live at host : localhost and port : 6379
+2025-05-31 18:49:23,415 | INFO | cache_base | Server has been shut down
+2025-05-31 18:49:24,290 | INFO | cache_base | The cache server is running live at host : localhost and port : 6379
+2025-05-31 18:49:24,290 | INFO | cache_base | Server has been shut down
+2025-05-31 18:49:39,993 | INFO | cache_base | The cache server is running live at host : localhost and port : 6379
+2025-05-31 18:49:39,993 | INFO | cache_base | Server has been shut down
+2025-05-31 18:52:14,232 | INFO | cache_base | The cache server is running live at host : localhost and port : 6379
+2025-05-31 18:52:23,939 | ERROR | cache_base | Shutting Down the server
+Traceback (most recent call last):
+  File "/home/psychohunter/Documents/cc/key_value_store/server/server.py", line 41, in start
+    client_socket,addr = self.server_socket.accept()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 295, in accept
+    fd, addr = self._accept()
+               ^^^^^^^^^^^^^^
+KeyboardInterrupt
+2025-05-31 18:52:33,943 | INFO | cache_base | Server has been shut down
+2025-05-31 18:59:06,549 | INFO | cache_base | The cache server is running live at host : localhost and port : 6379
+2025-05-31 18:59:16,674 | INFO | cache_base | New client connected from address ('127.0.0.1', 41098)
+2025-05-31 18:59:32,821 | ERROR | cache_base | ERROR IN COMMAND get client :('127.0.0.1', 41098)
+2025-05-31 18:59:35,037 | INFO | cache_base | Client ('127.0.0.1', 41098) disconnected from server
+2025-05-31 18:59:44,056 | INFO | cache_base | New client connected from address ('127.0.0.1', 59474)
+2025-05-31 19:00:06,101 | INFO | cache_base | Client ('127.0.0.1', 59474) disconnected from server
+2025-05-31 19:00:37,832 | ERROR | cache_base | Shutting Down the server
+Traceback (most recent call last):
+  File "/home/psychohunter/Documents/cc/key_value_store/server/server.py", line 41, in start
+    client_socket,addr = self.server_socket.accept()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 295, in accept
+    fd, addr = self._accept()
+               ^^^^^^^^^^^^^^
+KeyboardInterrupt

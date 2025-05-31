@@ -1,6 +1,6 @@
 import time
 import threading
-from stream import STREAM
+from data.stream import STREAM
 from typing import Dict
 
 class CACHE_STORE:
