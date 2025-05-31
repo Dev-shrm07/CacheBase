@@ -11,6 +11,8 @@ class CACHE_STORE:
         self.streams:Dict[str:STREAM] = {}
         self.types: Dict[str:str] = {}
         
+        
+        
     def get(self, key):
         with self.lock:
             if self.expire_check(key):
@@ -125,6 +127,17 @@ class CACHE_STORE:
             
             return None
         
+    
+    def get_stream_last_id(self,key):
+        with self.lock:
+            if key in self.streams.keys() and self.expire_check(key):
+                return None
+            
+            if key in self.streams.keys():
+                return self.streams[key].get_last_id()
+            
+            return None
+        
     def xread(self,keys,ids,count=None):
         with self.lock:
             if len(keys)!=len(ids):
@@ -137,12 +150,9 @@ class CACHE_STORE:
                     return None
                 id = ids[i]
                 D = self.streams[key].xread(start=id,count=count)
-                if D is None:
-                    return D
-                
                 response.append([key,D])
 
-            
+
             return response
     
     

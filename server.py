@@ -69,6 +69,7 @@ class CACHE_SERVER:
     def handle_client(self,client_socket,address):
         print(f"New client connected from address {address}")
         
+        threading.current_thread().client_socket = client_socket
         try:
             while self.running:
                 try:
@@ -99,6 +100,10 @@ class CACHE_SERVER:
             print(f"Error {str(e)}")
         
         finally:
+            with self.blocking_lock:
+                if client_socket in self.blocked_clients:
+                    del self.blocked_clients[client_socket]
+                    
             if client_socket in self.clients:
                 self.clients.remove(client_socket)
                 
@@ -184,7 +189,12 @@ class CACHE_SERVER:
         if len(args[2:])%2!=0:
                     return "ERROR: Invalid entry for stream"
                 
-        return self.store.xadd(key=key,id=id,Fields=args[2:])
+        response =  self.store.xadd(key=key,id=id,Fields=args[2:])
+        if response is not None:
+            self.notify_blocked_clients(key=key)
+        
+        return response
+            
     
     
     def cmd_xrange(self,args):
@@ -201,47 +211,123 @@ class CACHE_SERVER:
         
         return "ERROR: Invalid Command"
     
+    
     def cmd_xread(self,args):
         if len(args)<3:
             return "ERROR: Invalid command"
-        
-        if args[0]!="STREAMS":
-            return "ERROR: Invalid command"
-        
-        if args[1]=='COUNT':
-            if len(args)<5:
+        block = None
+        count = None
+        idx = 0
+        if args[idx]=='COUNT':
+            try:
+                count = int(args[idx+1])
+                if count == 0:
+                    return 'ERROR: Invalid count value'
+            except:
+                return "ERROR: Invalid count value"
+            idx += 2
+            if idx==len(args)-1:
                 return "ERROR: Invalid command"
-            lim = args[2]
-            if not isinstance(lim,int):
-                return "ERROR: Invalid limit"
             
-            if len(args[3:])%2!=0:
+        if args[idx]=='BLOCK':
+            try:
+                block = int(args[idx+1])
+            except:
+                return "ERROR: Invalid block value"
+            if idx==len(args)-1:
                 return "ERROR: Invalid command"
-            data = args[3:]
-            keys = data[::2]
-            ids = data[1::2]
             
-            return self.store.xread(keys=keys,ids=ids,count=lim)
+        if args[idx]!='STREAMS':
+            return "ERROR: Invalid commands"
         
-        
-       
-        if len(args)<3:
+        idx += 1
+        if idx==len(args)-1 or len(args[idx:])%2!=0:
             return "ERROR: Invalid command"
-           
-            
-        if len(args[1:])%2!=0:
-            return "ERROR: Invalid command"
-        data = args[1:]
-        keys = data[::2]
-        ids = data[1::2]
-            
-        return self.store.xread(keys=keys,ids=ids)    
         
-  
+        
+        midpoint = int((len(args)-idx)/2)
+        keys = args[idx:idx+midpoint]
+        ids = args[midpoint:]
+        
+
+        for i in range(len(keys)):
+            if ids[i]=='$':
+                ids[i] = self.store.get_stream_last_id(keys[i])
+                if ids[i] is None:
+                    return "ERROR: Invalid Key or ID"
+                
+        result = self.store.xread(keys=keys,ids=ids,count=count)
+        if ((result != [] and result) and any(data for _,data in result)) or block is None:
+            return result
+        
+        return self.wait_and_block(keys,ids,count,block)
     
     
-    
-    
+    def wait_and_block(self,keys,ids,count,block):
+        client_socket = getattr(threading.current_thread(),'client_socket',None)
+        if not client_socket:
+            return "ERROR: Client socket not found for blocking"
+        with self.blocking_lock:
+            self.blocked_clients[client_socket] = {
+                'keys':keys,
+                'ids':ids,
+                'count':count,
+                'event':threading.Event()
+            }
+            
+        
+        try:
+            if block == 0:
+                while True:
+                    self.blocked_clients[client_socket]['event'].wait()
+                    self.blocked_clients[client_socket]['event'].clear()
+                    
+                    result = self.store.xread(keys=keys,ids=ids,count=count)
+                    if ((result != [] and result) and any(data for _,data in result)):
+                        return result
+            
+            else:
+                timeout = block/1000
+                start_time = time.time()
+                
+                while time.time()-start_time>timeout:
+                    remaining_time = timeout-(time.time()-start_time)
+                    if self.blocked_clients[client_socket]['event'].wait(remaining_time=remaining_time):
+                        self.blocked_clients[client_socket]['event'].clear()
+                        
+                        result = self.store.xread(keys=keys,ids=ids,count=count)
+                        if ((result != [] and result) and any(data for _,data in result)):
+                            return result
+                    else:
+                        break
+                    
+                return [[key,[]] for key in keys]
+        
+        finally:
+            with self.blocking_lock:
+                if client_socket in self.blocked_clients:
+                    del self.blocked_clients[client_socket]
+                        
+                
+                    
+
+        
+        
+        
+        
+    def notify_blocked_clients(self,key):
+        with self.blocking_lock:
+            clients = []
+            for client_socket,info in self.blocked_clients.items():
+                if key in info['keys']:
+                    clients.append(client_socket)
+                    
+            
+            for client in clients:
+                if client in self.blocked_clients:
+                    self.blocked_clients[client]['event'].set()
+                
+                
     def cmd_xlen(self,args):
         if len(args)<1:
             return "ERROR: Insufficient Values"

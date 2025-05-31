@@ -11,6 +11,7 @@ class STREAM:
         self.data: Dict[str:Dict[str:any]] = {}
         self.data_idx = SortedList([])
         self.last_timestamp = None
+        
     
     @staticmethod
     def compare_ids(id1:str, id2:str):
@@ -119,6 +120,9 @@ class STREAM:
             data_to_return = list(self.data.items())[start_index:start_index+range]
             for data in data_to_return:
                 response.append([data[0], [x for pair in data[1].items() for x in pair]])
+            
+            if response == []:
+                return None
             return response
         
         
@@ -142,6 +146,9 @@ class STREAM:
             data_to_return = list(self.data.items())[start_index:start_index+range]
             for data in data_to_return:
                 response.append([data[0], [x for pair in data[1].items() for x in pair]])
+                
+            if response == []:
+                return None
             return response
         
     
@@ -173,6 +180,14 @@ class STREAM:
                         
                     self.data_idx = SortedList(self.data_idx[trim:])
                     self.data = dict(list(self.data.items())[trim:])
+                    
+    
+    def get_last_id(self):
+        if len(self.data)<1:
+            return None
+        
+        return self.data_idx[-1]
+        
             
             
             
