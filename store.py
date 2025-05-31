@@ -131,12 +131,12 @@ class CACHE_STORE:
     def get_stream_last_id(self,key):
         with self.lock:
             if key in self.streams.keys() and self.expire_check(key):
-                return None
+                return '$'
             
             if key in self.streams.keys():
                 return self.streams[key].get_last_id()
             
-            return None
+            return '$'
         
     def xread(self,keys,ids,count=None):
         with self.lock:
@@ -144,12 +144,15 @@ class CACHE_STORE:
                 return None
             
             response = []
-            for i in range(keys):
+            for i in range(len(keys)):
                 key = keys[i]
-                if key in self.streams.keys() and self.expire_check(key):
-                    return None
-                id = ids[i]
-                D = self.streams[key].xread(start=id,count=count)
+                if key not in self.streams.keys():
+                    D = None
+                elif key in self.streams.keys() and self.expire_check(key):
+                    D = None
+                else:
+                    id = ids[i]
+                    D = self.streams[key].xread(start=id,count=count)
                 response.append([key,D])
 
 

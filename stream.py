@@ -130,8 +130,11 @@ class STREAM:
 
             if start == '0':
                 start = '-'
-            
-            start_index = self.parse_index_for_range(start)
+                
+            if start =='$':
+                start_index = -1
+            else:
+                start_index = self.parse_index_for_range(start)
         
             if start_index is None:
                 return None
@@ -139,6 +142,8 @@ class STREAM:
             start_index += 1
             
             range = len(self.data)-start_index
+            if range<0:
+                return None
             if count and count>0:
                 range = count
                 

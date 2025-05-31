@@ -213,6 +213,7 @@ class CACHE_SERVER:
     
     
     def cmd_xread(self,args):
+
         if len(args)<3:
             return "ERROR: Invalid command"
         block = None
@@ -234,6 +235,8 @@ class CACHE_SERVER:
                 block = int(args[idx+1])
             except:
                 return "ERROR: Invalid block value"
+            
+            idx += 2
             if idx==len(args)-1:
                 return "ERROR: Invalid command"
             
@@ -245,9 +248,11 @@ class CACHE_SERVER:
             return "ERROR: Invalid command"
         
         
+        
         midpoint = int((len(args)-idx)/2)
+
         keys = args[idx:idx+midpoint]
-        ids = args[midpoint:]
+        ids = args[idx+midpoint:]
         
 
         for i in range(len(keys)):
@@ -255,8 +260,10 @@ class CACHE_SERVER:
                 ids[i] = self.store.get_stream_last_id(keys[i])
                 if ids[i] is None:
                     return "ERROR: Invalid Key or ID"
+
                 
         result = self.store.xread(keys=keys,ids=ids,count=count)
+
         if ((result != [] and result) and any(data for _,data in result)) or block is None:
             return result
         
@@ -265,6 +272,7 @@ class CACHE_SERVER:
     
     def wait_and_block(self,keys,ids,count,block):
         client_socket = getattr(threading.current_thread(),'client_socket',None)
+
         if not client_socket:
             return "ERROR: Client socket not found for blocking"
         with self.blocking_lock:
@@ -281,7 +289,6 @@ class CACHE_SERVER:
                 while True:
                     self.blocked_clients[client_socket]['event'].wait()
                     self.blocked_clients[client_socket]['event'].clear()
-                    
                     result = self.store.xread(keys=keys,ids=ids,count=count)
                     if ((result != [] and result) and any(data for _,data in result)):
                         return result
@@ -290,9 +297,9 @@ class CACHE_SERVER:
                 timeout = block/1000
                 start_time = time.time()
                 
-                while time.time()-start_time>timeout:
+                while time.time()-start_time<timeout:
                     remaining_time = timeout-(time.time()-start_time)
-                    if self.blocked_clients[client_socket]['event'].wait(remaining_time=remaining_time):
+                    if self.blocked_clients[client_socket]['event'].wait(timeout=remaining_time):
                         self.blocked_clients[client_socket]['event'].clear()
                         
                         result = self.store.xread(keys=keys,ids=ids,count=count)
@@ -308,11 +315,7 @@ class CACHE_SERVER:
                 if client_socket in self.blocked_clients:
                     del self.blocked_clients[client_socket]
                         
-                
-                    
-
-        
-        
+  
         
         
     def notify_blocked_clients(self,key):
