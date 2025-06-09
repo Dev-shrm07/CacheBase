@@ -89,7 +89,8 @@ class CACHE_SERVER:
                     if response is None:
                         response = f"ERROR IN COMMAND {command}"
                     
-                    if response.startswith("ERROR"):
+                    self.logger.info(response)
+                    if isinstance(response,str) and response.startswith("ERROR"):
                         self.logger.error(f"{response} client :{address}")
                     response_to_send = RESP_PARSER.encode(response)
                     
