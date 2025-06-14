@@ -8,7 +8,6 @@ class CACHE_STORE:
         self.lock = threading.Lock()
         self.data: Dict[str:any] = {}
         self.expiry: Dict[str:float] = {}
-        self.streams:Dict[str:STREAM] = {}
         self.types: Dict[str:str] = {}
         
         
@@ -24,8 +23,6 @@ class CACHE_STORE:
     
     def set(self,key,val,ex=None):
         with self.lock:
-            if key in self.streams.keys():
-                return "ERROR: This Key exists as a STREAM"
             self.data[key] = val
             self.types[key] = "string"
             if ex and isinstance(ex,int):
@@ -43,12 +40,6 @@ class CACHE_STORE:
                     del self.types[key]
                     if key in self.expiry.keys():
                         del self.expiry[keys]
-                    
-                elif key in self.streams.keys():
-                    del self.streams[key]
-                    del self.types[key]
-                    if key in self.expiry.keys():
-                        del self.expiry[keys]
                 
                 else:
                     flag = 0
@@ -59,7 +50,7 @@ class CACHE_STORE:
                 
     def expire(self,key, times):
         with self.lock:
-            if key in self.streams.keys() or key in self.data.keys():
+            if key in self.data.keys():
                 self.expiry[key] = time.time() + times
                 return 1
             return 0
@@ -78,11 +69,7 @@ class CACHE_STORE:
         if key in self.expiry.keys() and  time.time()>=self.expiry[key]:
             del self.expiry[key]
             del self.types[key]
-            if key in self.data.keys():
-                del self.data[key]
-                        
-            elif key in self.streams.keys():
-                del self.streams[key]
+            del self.data[key]
             
             return True
 
@@ -92,38 +79,41 @@ class CACHE_STORE:
         
     def xadd(self,key,Fields,id='*',maxLen=None,Approx=False):
         with self.lock:
-            if key in self.data.keys():
-                return None
-            if key in self.streams.keys() and self.expire_check(key):
+
+            if key in self.data.keys() and self.expire_check(key):
                 return None
             
-            if key not in self.streams.keys():
-                self.types[key] = "stream"
-                
-            stream = self.streams.get(key, STREAM())
+            stream = self.data.get(key, STREAM())
+            if not isinstance(stream, STREAM):
+                stream = STREAM()
             response = stream.xadd(Fields,id,maxLen,Approx)
-            self.streams[key] = stream
+            self.data[key] = stream
+            self.types[key] = "stream"
             return response
             
     
     def xdel(self,key,ids):
         with self.lock:
-            if key in self.streams.keys() and self.expire_check(key):
+            if key in self.data.keys() and self.expire_check(key):
                 return None
             
-            if key in self.streams.keys():
-                return self.streams[key].xdel(ids)
+            if key in self.data.keys():
+                if not isinstance(self.data[key], STREAM):
+                    return 0
+                return self.data[key].xdel(ids)
             
             return 0
         
     
     def xrange(self,key, start='-',end='+', count=None):
         with self.lock:
-            if key in self.streams.keys() and self.expire_check(key):
+            if key in self.data.keys() and self.expire_check(key):
                 return None
             
-            if key in self.streams.keys():
-                response =  self.streams[key].xrange(start=start,end=end,count=count)
+            if key in self.data.keys():
+                if not isinstance(self.data[key], STREAM):
+                    return None
+                response =  self.data[key].xrange(start=start,end=end,count=count)
                 return response
             
             return None
@@ -131,11 +121,13 @@ class CACHE_STORE:
     
     def get_stream_last_id(self,key):
         with self.lock:
-            if key in self.streams.keys() and self.expire_check(key):
+            if key in self.data.keys() and self.expire_check(key):
                 return '$'
             
-            if key in self.streams.keys():
-                return self.streams[key].get_last_id()
+            if key in self.data.keys():
+                if not isinstance(self.data[key], STREAM):
+                    return '$'
+                return self.data[key].get_last_id()
             
             return '$'
         
@@ -147,13 +139,16 @@ class CACHE_STORE:
             response = []
             for i in range(len(keys)):
                 key = keys[i]
-                if key not in self.streams.keys():
+                if key not in self.data.keys():
                     D = None
-                elif key in self.streams.keys() and self.expire_check(key):
+                elif key in self.data.keys() and self.expire_check(key):
                     D = None
+                elif key in self.data.keys():   
+                    if not isinstance(self.data[key], STREAM):
+                        D = None
                 else:
                     id = ids[i]
-                    D = self.streams[key].xread(start=id,count=count)
+                    D = self.data[key].xread(start=id,count=count)
                 response.append([key,D])
 
 
@@ -162,11 +157,13 @@ class CACHE_STORE:
     
     def xlen(self,key):
         with self.lock:
-            if key in self.streams.keys() and self.expire_check(key):
+            if key in self.data.keys() and self.expire_check(key):
                 return None
             
-            if key in self.streams.keys():
-                return len(self.streams[key].data)
+            if key in self.data.keys():
+                if not isinstance(self.data[key], STREAM):
+                        return None
+                return len(self.data[key].data)
             
             return 0
         
