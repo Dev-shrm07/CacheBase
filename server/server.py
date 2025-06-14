@@ -5,10 +5,11 @@ import time
 from typing import List
 from data.store import CACHE_STORE
 from utils.logger import LOGGER
+from raft.raft import RaftNode
 
 
 class CACHE_SERVER:
-    def __init__(self,log_file_path,host='localhost',port=6379,max_clients = 5):
+    def __init__(self,log_file_path,host='localhost',port=6379,max_clients = 5,node_id = None, peers = None, enable_raft = False):
         self.host = host
         self.port = port
         self.max_clients = max_clients
@@ -20,8 +21,54 @@ class CACHE_SERVER:
         self.blocking_lock = threading.Lock()
         self.logger =LOGGER(log_file_path)
         self.expiry_thread = None
-
         
+        self.enable_raft = enable_raft
+        self.raft_node = None
+        self.peer_connections = {}
+        
+        if enable_raft and node_id and peers:
+            self.node_id = node_id
+            self.peers = peers or []
+            self.raft_node = RaftNode(node_id=self.node_id, peers= self.peers, cache_server=self, logger=self.logger)
+            self.setup_peer_connections()
+            
+    
+    def setup_peer_connections(self):
+        for peer in self.peers:
+            parts = peer.split(':')
+            if len(parts)!=3:
+                continue
+            peer_id, port, host = parts
+            self.peer_connections[peer_id] = {
+                'host':host,
+                'port':int(port),
+                'id':peer_id
+            }
+            
+    def send_to_peer(self,peer_id,message):
+        if peer_id not in self.peer_connections:
+            return None
+        
+        peer_info = self.peer_connections[peer_id]
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            sock.connect((peer_info['host'], peer_info['port']))
+            
+            raft_command = f"RAFT {message}"
+            raft_command = raft_command.split()
+            encoded = RESP_PARSER.encode(raft_command)
+            
+            sock.send(encoded)
+            
+            response_data = sock.recv(4096)
+            sock.close()
+            
+            response_data = RESP_PARSER.parse(response_data)
+            return str(response_data)     
+        except Exception as e:
+            self.logger.error(f"Failed to send to peer {peer_id}:{e}")
+            return None   
     
     
     def start(self):
@@ -33,6 +80,9 @@ class CACHE_SERVER:
         self.expiry_thread = threading.Thread(target=self.clean_expired_keys,daemon=True)
         self.expiry_thread.start()
         
+        if self.raft_node:
+            self.raft_node.start()     
+               
         self.logger.info(f"The cache server is running live at host : {self.host} and port : {self.port}")
         
         try:
@@ -56,6 +106,8 @@ class CACHE_SERVER:
     
     
     def shutdown(self):
+        if self.raft_node:
+            self.raft_node.stop()
         self.clean_expired_keys()
         
         for client in self.clients:
@@ -128,6 +180,15 @@ class CACHE_SERVER:
         if command is None or not isinstance(command,str):
             return "ERROR: Not a valid command"
         command = command.upper()
+        
+        if command == 'RAFT':
+            if not self.raft_node:
+                return 'ERROR: No raft node exists'
+            return self.raft_node.handle_raft_command(args)
+        
+        if self.enable_raft and command in ['SET','DEL','EXPIRE','XADD', 'XDEL']:
+            return self.handle_write_command(command,args)
+        
         if command =="PING":
             return "PONG"
         elif command == "GET":
@@ -166,6 +227,65 @@ class CACHE_SERVER:
         else:
             return 'ERROR: Not a valid command'
         
+    
+    def handle_write_command(self, command,args):
+        if not self.raft_node:
+            return "ERROR: Raft not enabled"
+        
+        if not self.raft_node.is_leader():
+            if self.raft_node.get_leader_id():
+                return self.send_to_peer(self.raft_node.get_leader_id(), f"FORWARD {command} {' '.join(args)}")
+            else:
+                return "ERROR: No leader available"
+            
+        initial_commit_index = self.raft_node.commit_index
+        try:
+            replication_result = self.raft_node.replicate_command([command]+args)
+            if replication_result.startswith("OK"):
+                 timeout = 5.0  
+                 start_time = time.time()
+                
+                 while (self.raft_node.commit_index <= initial_commit_index and 
+                    time.time() - start_time < timeout):
+                    time.sleep(0.01) 
+                
+                 if self.raft_node.commit_index > initial_commit_index:
+                    return "OK command replicated and applied"
+                 else:
+                    return "ERROR: Command replication timeout"
+                 
+            else:
+                return replication_result
+            
+        except Exception as e:
+            self.logger.error(f'Error while executing command at {self.node_id}: {command}')
+            return f"ERROR: {str(e)}"
+    
+    
+    def execute_local_write(self, command, args):
+        
+        command = command.upper()
+        if command == "SET":
+            return self.cmd_set(args)
+        elif command == "DEL":
+            return self.cmd_del(args)
+        elif command == 'EXPIRE':
+            return self.cmd_expire(args)
+        elif command == "XADD":
+            return self.cmd_xadd(args)
+        elif command == "XDEL":
+            return self.cmd_xdel(args)
+        else:
+            return f"ERROR: Unknown command {command}"
+    
+    
+    
+    def apply_raft_command(self,command,args):
+        try:
+            result = self.execute_local_write(command,args)
+            self.logger.info(f"Applied Raft command: {command} {args} -> {result}")
+        except Exception as e:
+            self.logger.error(f"Error applying raft command {command} {args}: {str(e)}")        
     
     
     
