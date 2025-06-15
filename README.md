@@ -1,5 +1,8 @@
-# CacheBase 
+<div align="center">
 
+# CacheBase 🧾
+
+</div>
 
 A distributed in-memory key-value store with built-in Raft consensus algorithm for fault tolerance and strong consistency. CacheBase provides Redis-compatible commands with distributed capabilities. It supports string type keys along with streams, to store and read data streams with features like xadd, xread with blocking etc.
 
@@ -41,7 +44,7 @@ python run_single_node.py
 python run_cluster.py
 ```
 
-## Supported Commands
+## Supported Commands 📋
 
 ### Basic Operations
 
@@ -65,7 +68,7 @@ ECHO "Hello World"
 Set a key-value pair with optional expiration
 ```
 SET mykey "myvalue"
-SET session:123 "user_data" EX 3600
+SET "user_data" EX 3600
 # Returns: OK
 ```
 
@@ -182,21 +185,14 @@ In cluster mode, write operations (`SET`, `DEL`, `EXPIRE`, `XADD`, `XDEL`) are:
 Read operations (`GET`, `XRANGE`, `XREAD`) can be served by any node and reflect the most recently committed state.
 
 
-<div align="center">
 
-## 🏛️ CacheBase Architecture
+### CacheBase Architecture
 
 ![CacheBase Architecture](path/to/your/architecture-diagram.png)
 
-</div>
-
-<div align="center">  
-
-## 📊 Performance Dashboard
+### Performance Dashboard
 
 ![CacheBase Performance](path/to/your/performance-dashboard.png)
-
-</div>
 
 
 ## Contributing
