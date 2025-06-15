@@ -1,6 +1,6 @@
 <div align="center">
 
-# CacheBase 🧾
+# CacheBase 💾
 
 </div>
 
