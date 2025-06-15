@@ -13,7 +13,7 @@ class NodeState(Enum):
     
 
 class RaftNode:
-    def __init__(self, node_id: str, peers: List[str], cache_server = None, logger = None):
+    def __init__(self, node_id: str, peers: List[str], cache_server = None, logger = None, persisted = False):
         self.node_id = node_id
         self.peers = peers
         self.cache_server = cache_server
@@ -40,6 +40,7 @@ class RaftNode:
         self.running = False
         self.election_timer = None
         self.heartbeat_timer = None
+        self.persisted = persisted
         
         
     def start(self):
@@ -55,71 +56,44 @@ class RaftNode:
         if self.heartbeat_timer:
             self.heartbeat_timer.cancel()
             
-            
+    
+    def restore_state(self, term, voted_for, log_entries):
+        if self.persisted:
+            self.current_term = term
+            self.voted_for = voted_for  
+            self.log = log_entries
+
+            for i, entry in enumerate(log_entries):
+                if i <= self.commit_index:  
+                    command = entry['command'][0]
+                    args = entry['command'][1:]
+                    self.cache_server.execute_local_write(command, args)
+
+    def persist_state(self):
+        if self.persisted:
+            self.cache_server.persistence.save_state(self.current_term, self.voted_for)
+
+    def persist_log(self):
+        if self.persisted:
+            self.cache_server.persistence.save_log(self.log)
+                
+                
     def handle_raft_command(self, cmd:List[str]):
         
         if not cmd:
             return "ERROR: empty command"
         
-        
-        if cmd[0] == "APPEND_ENTRIES":
-            return self.cmd_append_entries(cmd[1:])
-        
-        elif cmd[0] == "REQUEST_VOTE":
-            return self.cmd_request_vote(cmd[1:])
-        
+
         elif cmd[0] == "RAFT_STATUS":
             return self.get_status()
         
         elif cmd[0] == "RAFT_REPLICATE":
             return self.replicate_command(cmd[1:])
         
-        elif cmd[0] == "FORWARD":
-            
-            forwarded_cmd = cmd[1] 
-            forwarded_args = cmd[2:] 
-            return self.cache_server.execute_command(forwarded_cmd, forwarded_args)
-        
         else:
             return f"ERROR: Unknown raft command {cmd}"
             
 
-    def cmd_append_entries(self,cmd):
-        if len(cmd)<6:
-            return "ERROR: Invalid Command"
-        try:
-        
-            term = int(cmd[0])
-            leader_id = cmd[1]
-            prev_log_index = int(cmd[2])
-            prev_log_term = int(cmd[3])
-            entries = json.loads(cmd[4]) if cmd[4]!='[]' else []
-            leader_commit = int(cmd[5])
-            
-            success, match_index = self.handle_append_entries(term, leader_id, prev_log_index, prev_log_term, entries, leader_commit)
-            return f"APPEND_ENTRIES_RESPONSE {self.current_term} {success} {match_index}"
-        
-        except Exception as e:
-            return f"ERROR: {str(e)}"
-        
-        
-    def cmd_request_vote(self, cmd):
-        if len(cmd)<4:
-            return "ERROR: Invalid command"
-        
-        try:
-            term = int(cmd[0])
-            candidate_id = cmd[1]
-            last_log_index = int(cmd[2])
-            last_log_term = int(cmd[3])
-            
-            vote_granted = self.handle_request_vote(term, candidate_id, last_log_index, last_log_term)
-            
-            return f"REQUEST_VOTE_RESPONSE {self.current_term} {vote_granted}"
-
-        except Exception as e:
-            return f"ERROR: {str(e)}"
-        
         
         
     def reset_election_timer(self):
@@ -140,6 +114,8 @@ class RaftNode:
             
             self.current_term += 1
             self.voted_for = self.node_id
+            if self.persisted:
+                self.persist_state()
             self.votes_recieved = {self.node_id}
             self.leader_id = None
             
@@ -160,19 +136,20 @@ class RaftNode:
                 
                 
     def send_vote_request(self,peer,term,last_log_index,last_log_term):
+   
         try:
-            if self.cache_server and hasattr(self.cache_server, 'send_to_peer'):
-                response = self.cache_server.send_to_peer(
-                    peer, f"REQUEST_VOTE {term} {self.node_id} {last_log_index} {last_log_term}"
+            if self.cache_server and hasattr(self.cache_server, 'send_rpc_to_peer'):
+                self.logger.info(f"trying to call rpc for vote for {term} to {peer} by {self.node_id}")
+                response = self.cache_server.send_rpc_to_peer(
+                    peer, 'request_vote', term, self.node_id, last_log_index, last_log_term
                     
                 )
                 
-                if response and response.startswith("REQUEST_VOTE_RESPONSE"):
-                    parts = response.split()
-                    if len(parts) >= 3:
-                        response_term = int(parts[1])
-                        vote_granted = parts[2] == "True"
-                        self.handle_vote_response(peer, response_term, vote_granted)
+             
+                if response:
+                    response_term = response.get('term', 0)
+                    vote_granted = response.get('vote_granted', False)
+                    self.handle_vote_response(peer, response_term, vote_granted)
         
         except Exception as e:
             self.logger.info(f"Failed to send vote request to {peer} {str(e)}")
@@ -215,6 +192,8 @@ class RaftNode:
         self.state = NodeState.FOLLOWER
         self.current_term = term
         self.voted_for = None
+        if self.persisted:
+                self.persist_state()
         self.leader_id = None
         
         if self.heartbeat_timer:
@@ -248,19 +227,21 @@ class RaftNode:
             prev_log_term = self.log[prev_log_index]['term'] if prev_log_index >= 0 and prev_log_index < len(self.log) else 0
             
             entries = self.log[next_index:] if next_index < len(self.log) else []
-            entries_json = json.dumps(entries)
+            entries_json = entries
             
             try:
                 
-                if self.cache_server and hasattr(self.cache_server, 'send_to_peer'):
-                    response = self.cache_server.send_to_peer(
-                        peer, f"APPEND_ENTRIES {self.current_term} {self.node_id} {prev_log_index} {prev_log_term} {entries_json} {self.commit_index}"
+               if self.cache_server and hasattr(self.cache_server, 'send_rpc_to_peer'):
+                    response = self.cache_server.send_rpc_to_peer(
+                        peer, 'append_entries', 
+                        self.current_term, self.node_id, prev_log_index, 
+                        prev_log_term, entries_json, self.commit_index
                     )
-                    if response and response.startswith('APPEND_ENTRIES_RESPONSE'):
-                        parts = response.split()
-                        response_term = int(parts[1])
-                        success = parts[2]=="True"
-                        match_index = int(parts[3])
+                    
+                    if response:
+                        response_term = response.get('term', 0)
+                        success = response.get('success', False)
+                        match_index = response.get('match_index', -1)
                         self.handle_append_entries_response(peer, response_term, success, match_index)
                         
             except Exception as e:
@@ -341,6 +322,9 @@ class RaftNode:
             if entries:
                 insert_index = prev_log_index+1
                 self.log = self.log[:insert_index]+entries
+                                
+                if self.persisted:
+                    self.persist_log()
             
             if leader_commit > self.commit_index:
                 self.commit_index = min(leader_commit, len(self.log)-1)
@@ -364,6 +348,8 @@ class RaftNode:
                 if (last_log_term > our_last_term or 
                     (last_log_term==our_last_term and last_log_index>=our_last_index)):
                     self.voted_for = candidate_id
+                    if self.persisted:
+                        self.persist_state()
                     self.reset_election_timer()
                     return True
                 
@@ -391,6 +377,9 @@ class RaftNode:
                 "timestamp": time.time()
             }
             self.log.append(entry)
+            
+            if self.persisted:
+                self.persist_log()
 
             for peer in self.peers:
                 threading.Thread(

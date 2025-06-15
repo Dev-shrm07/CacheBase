@@ -1,0 +1,29 @@
+2025-06-15 23:02:38,260 | INFO | cache_base | RPC peer node2 at http://localhost:7380/
+2025-06-15 23:02:38,260 | INFO | cache_base | RPC peer node3 at http://localhost:7381/
+2025-06-15 23:02:38,261 | INFO | cache_base | RPC SERVER started on localhost:7379
+2025-06-15 23:02:38,762 | INFO | cache_base | The cache server is running live at host : localhost and port : 6379 with raft rpc at port 7379
+2025-06-15 23:02:39,261 | INFO | cache_base | RPC peer node1 at http://localhost:7379/
+2025-06-15 23:02:39,261 | INFO | cache_base | RPC peer node3 at http://localhost:7381/
+2025-06-15 23:02:39,262 | INFO | cache_base | RPC SERVER started on localhost:7380
+2025-06-15 23:02:39,763 | INFO | cache_base | The cache server is running live at host : localhost and port : 6380 with raft rpc at port 7380
+2025-06-15 23:02:40,261 | INFO | cache_base | RPC peer node1 at http://localhost:7379/
+2025-06-15 23:02:40,262 | INFO | cache_base | RPC peer node2 at http://localhost:7380/
+2025-06-15 23:02:40,263 | INFO | cache_base | RPC SERVER started on localhost:7381
+2025-06-15 23:02:40,764 | INFO | cache_base | The cache server is running live at host : localhost and port : 6381 with raft rpc at port 7381
+2025-06-15 23:02:45,589 | INFO | cache_base | Election started for term 1 by Node node1
+2025-06-15 23:02:45,590 | INFO | cache_base | trying to call rpc for vote for 1 to node2 by node1
+2025-06-15 23:02:45,591 | INFO | cache_base | trying to call rpc for vote for 1 to node3 by node1
+2025-06-15 23:02:45,597 | INFO | cache_base | Node node1 became leader for term 1
+2025-06-15 23:03:00,146 | INFO | cache_base | New client connected from address ('127.0.0.1', 36314)
+2025-06-15 23:03:16,594 | INFO | cache_base | Applied Raft command: SET ['key', 'val'] -> OK
+2025-06-15 23:03:16,597 | INFO | cache_base | Applied Raft command: SET ['key', 'val'] -> OK
+2025-06-15 23:03:17,623 | INFO | cache_base | Applied Raft command: SET ['key', 'val'] -> OK
+2025-06-15 23:03:42,147 | INFO | cache_base | Applied Raft command: DEL ['key'] -> 1
+2025-06-15 23:03:42,149 | INFO | cache_base | Applied Raft command: DEL ['key'] -> 1
+2025-06-15 23:03:43,646 | INFO | cache_base | Applied Raft command: DEL ['key'] -> 1
+2025-06-15 23:03:57,618 | INFO | cache_base | Applied Raft command: XADD ['key', '*', 'name', 'okay'] -> 1750008837618-0
+2025-06-15 23:03:57,621 | INFO | cache_base | Applied Raft command: XADD ['key', '*', 'name', 'okay'] -> 1750008837621-0
+2025-06-15 23:03:57,657 | INFO | cache_base | Applied Raft command: XADD ['key', '*', 'name', 'okay'] -> 1750008837657-0
+2025-06-15 23:04:08,952 | INFO | cache_base | Client ('127.0.0.1', 36314) disconnected from server
+2025-06-15 23:04:13,484 | INFO | cache_base | New client connected from address ('127.0.0.1', 47112)
+2025-06-15 23:04:33,192 | INFO | cache_base | Client ('127.0.0.1', 47112) disconnected from server

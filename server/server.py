@@ -6,10 +6,23 @@ from typing import List
 from data.store import CACHE_STORE
 from utils.logger import LOGGER
 from raft.raft import RaftNode
+from xmlrpc.server import SimpleXMLRPCServer, SimpleXMLRPCRequestHandler
+import xmlrpc.client
+from utils.persistence import Persistence
+
+class TimeoutTransport(xmlrpc.client.Transport):
+    def __init__(self, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.timeout = timeout
+    
+    def make_connection(self, host):
+        conn = super().make_connection(host)
+        conn.timeout = self.timeout
+        return conn
 
 
 class CACHE_SERVER:
-    def __init__(self,log_file_path,host='localhost',port=6379,max_clients = 5,node_id = None, peers = None, enable_raft = False):
+    def __init__(self,log_file_path,host='localhost',port=6379,max_clients = 5,node_id = None, peers = None, enable_raft = False, persistence_file_dir = None):
         self.host = host
         self.port = port
         self.max_clients = max_clients
@@ -24,54 +37,124 @@ class CACHE_SERVER:
         
         self.enable_raft = enable_raft
         self.raft_node = None
-        self.peer_connections = {}
+        
+        self.rpc_server = None
+        self.rpc_port = port + 1000
+        self.rpc_thread = None
+        self.peer_rpc_addresses = {}
+        self.persisted = False
+        
+        if persistence_file_dir:
+            self.peristance_manager = Persistence(node_id=self.node_id, persistence_file_dir=persistence_file_dir, logger=self.logger)
+            self.persisted = True
         
         if enable_raft and node_id and peers:
             self.node_id = node_id
             self.peers = peers or []
-            self.raft_node = RaftNode(node_id=self.node_id, peers= self.peers, cache_server=self, logger=self.logger)
-            self.setup_peer_connections()
+            self.setup_rpc_peers()
+            self.raft_node = RaftNode(node_id=self.node_id, peers= list(self.peer_rpc_addresses.keys()), cache_server=self, logger=self.logger, persisted=self.persisted)
+            
+
+            
+            
             
     
-    def setup_peer_connections(self):
+    def setup_rpc_peers(self):
         for peer in self.peers:
             parts = peer.split(':')
-            if len(parts)!=3:
+            if len(parts)!=4:
                 continue
-            peer_id, port, host = parts
-            self.peer_connections[peer_id] = {
-                'host':host,
-                'port':int(port),
-                'id':peer_id
-            }
+            peer_id, cache_port, host, rpc_port = parts
+            rpc_url = f"http://{host}:{rpc_port}/"
+            self.peer_rpc_addresses[peer_id] = rpc_url
+            self.logger.info(f"RPC peer {peer_id} at {rpc_url}")
             
-    def send_to_peer(self,peer_id,message):
-        if peer_id not in self.peer_connections:
+    
+    
+    
+    def start_rpc_server(self):
+        try:
+            class QuietXMLRPCRequestHandler(SimpleXMLRPCRequestHandler):
+                def log_request(self, code='-', size='-'):
+                    pass
+            
+            self.rpc_server = SimpleXMLRPCServer(
+                (self.host, self.rpc_port),
+                requestHandler=QuietXMLRPCRequestHandler,
+                allow_none=True
+            )
+            
+            self.rpc_server.register_function(self.rpc_append_entries, 'append_entries')
+            self.rpc_server.register_function(self.rpc_request_vote, 'request_vote')
+            self.rpc_server.register_function(self.rpc_forward_command, 'forward_command')
+            
+            self.logger.info(f"RPC SERVER started on {self.host}:{self.rpc_port}")
+            self.rpc_server.serve_forever()
+            
+        except Exception as e:
+            self.logger.error(f"Error while starting rpc server: {e}")
+            
+            
+    def rpc_append_entries(self, term, leader_id, prev_log_index, prev_log_term, entries, leader_commit):
+        if not self.raft_node:
+            return {"success":False, "term":0, "match_index":-1}
+        
+        success,match_index = self.raft_node.handle_append_entries(
+            term,leader_id, prev_log_index, prev_log_term, entries, leader_commit
+        )
+        return {
+            "success": success,
+            "term": self.raft_node.current_term,
+            "match_index": match_index
+        }
+
+
+
+    def rpc_request_vote(self, term , candidate_id, last_log_index, last_log_term):
+        if not self.raft_node:
+            return {"vote_granted":False, "term":0}
+        
+        vote_granted = self.raft_node.handle_request_vote(
+            term, candidate_id, last_log_index, last_log_term
+        )
+        return {
+            "vote_granted":vote_granted,
+            "term":self.raft_node.current_term
+        }
+
+
+
+    def rpc_forward_command(self,command,args):
+        return self.execute_command(command,args)
+
+    
+    def send_rpc_to_peer(self, peer_id, method, *args):
+        if peer_id not in self.peer_rpc_addresses:
             return None
         
-        peer_info = self.peer_connections[peer_id]
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            sock.connect((peer_info['host'], peer_info['port']))
+            rpc_url = self.peer_rpc_addresses[peer_id]
+            transport = TimeoutTransport(timeout=2)
             
-            raft_command = f"RAFT {message}"
-            raft_command = raft_command.split()
-            encoded = RESP_PARSER.encode(raft_command)
-            
-            sock.send(encoded)
-            
-            response_data = sock.recv(4096)
-            sock.close()
-            
-            response_data = RESP_PARSER.parse(response_data)
-            return str(response_data)     
+            with xmlrpc.client.ServerProxy(rpc_url,transport=transport) as proxy:
+                if method == 'append_entries':
+                    return proxy.append_entries(*args)
+                elif method == 'request_vote':
+                    return proxy.request_vote(*args)
+                elif method == 'forward_command':
+                    return proxy.forward_command(*args)
         except Exception as e:
-            self.logger.error(f"Failed to send to peer {peer_id}:{e}")
-            return None   
+            self.logger.error(f"RPC call to {peer_id} failed: {e}")
+            return None
     
     
     def start(self):
+        if self.enable_raft and self.raft_node:
+            self.rpc_thread = threading.Thread(target=self.start_rpc_server, daemon=True)
+            self.rpc_thread.start()
+            time.sleep(0.5)
+
+ 
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
         self.server_socket.bind((self.host,self.port))
@@ -81,9 +164,17 @@ class CACHE_SERVER:
         self.expiry_thread.start()
         
         if self.raft_node:
+            if self.persisted:
+                term,voted_for = self.peristance_manager.load_state()
+                log_entries = self.peristance_manager.load_log()
+                self.raft_node.restore_state(term,voted_for,log_entries)
+                
             self.raft_node.start()     
                
-        self.logger.info(f"The cache server is running live at host : {self.host} and port : {self.port}")
+        if self.enable_raft:
+            self.logger.info(f"The cache server is running live at host : {self.host} and port : {self.port} with raft rpc at port {self.rpc_port}")
+        else:
+            self.logger.info(f"The cache server is running live at host : {self.host} and port : {self.port}")
         
         try:
             while self.running:
@@ -140,8 +231,8 @@ class CACHE_SERVER:
                     response = self.execute_command(command,parsed[1:])
                     if response is None:
                         response = f"ERROR IN COMMAND {command}"
-                    
-                    self.logger.info(response)
+                    if not self.enable_raft:
+                        self.logger.info(f"Command : {" ".join([str(i) for i in parsed])}, Response: {response}")
                     if isinstance(response,str) and response.startswith("ERROR"):
                         self.logger.error(f"{response} client :{address}")
                     response_to_send = RESP_PARSER.encode(response)
@@ -234,7 +325,13 @@ class CACHE_SERVER:
         
         if not self.raft_node.is_leader():
             if self.raft_node.get_leader_id():
-                return self.send_to_peer(self.raft_node.get_leader_id(), f"FORWARD {command} {' '.join(args)}")
+                response = self.send_rpc_to_peer(
+                    self.raft_node.get_leader_id(),
+                    'forward_command',
+                    command,
+                    args
+                )
+                return response if response else "ERROR: Failed to forward to leader"
             else:
                 return "ERROR: No leader available"
             

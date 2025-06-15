@@ -1,0 +1,12 @@
+2025-06-15 21:42:45,561 | INFO | cache_base | The cache server is running live at host : localhost and port : 6379
+2025-06-15 21:42:51,984 | INFO | cache_base | New client connected from address ('127.0.0.1', 54234)
+2025-06-15 21:42:55,985 | INFO | cache_base | Command : set key val, Response: OK
+2025-06-15 21:43:01,817 | INFO | cache_base | Command : get key, Response: val
+2025-06-15 21:43:04,274 | INFO | cache_base | Command : del key, Response: 1
+2025-06-15 21:43:16,891 | INFO | cache_base | Command : set key ok, Response: OK
+2025-06-15 21:43:20,683 | INFO | cache_base | Command : type key, Response: string
+2025-06-15 21:44:01,158 | INFO | cache_base | Command : xadd skey * name abc, Response: 1750004041157-0
+2025-06-15 21:44:12,384 | INFO | cache_base | Command : type skey, Response: stream
+2025-06-15 21:44:22,314 | INFO | cache_base | Command : xadd skey * name khi, Response: 1750004062314-0
+2025-06-15 21:44:27,176 | INFO | cache_base | Command : xrange skey - +, Response: [['1750004011820-0', ['name', 'abc', 'age', 20]], ['1750004041157-0', ['name', 'abc']], ['1750004062314-0', ['name', 'khi']]]
+2025-06-15 21:45:55,136 | INFO | cache_base | Client ('127.0.0.1', 54234) disconnected from server
