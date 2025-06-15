@@ -22,11 +22,11 @@ class TimeoutTransport(xmlrpc.client.Transport):
 
 
 class CACHE_SERVER:
-    def __init__(self,log_file_path,host='localhost',port=6379,max_clients = 5,node_id = None, peers = None, enable_raft = False, persistence_file_dir = None):
+    def __init__(self,log_file_path,host='localhost',port=6379,max_clients = 5,node_id = None, peers = None, enable_raft = False, persistence_file_dir = None, default_expiry = 15):
         self.host = host
         self.port = port
         self.max_clients = max_clients
-        self.store = CACHE_STORE()
+        self.store = CACHE_STORE(expiry = default_expiry)
         self.clients:List[socket.socket]=[]
         self.server_socket = None
         self.running = False

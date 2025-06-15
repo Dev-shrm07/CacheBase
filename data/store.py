@@ -4,7 +4,8 @@ from data.stream import STREAM
 from typing import Dict
 
 class CACHE_STORE:
-    def __init__(self):
+    def __init__(self,expiry):
+        self.default_expiry = expiry
         self.lock = threading.Lock()
         self.data: Dict[str:any] = {}
         self.expiry: Dict[str:float] = {}
@@ -23,6 +24,7 @@ class CACHE_STORE:
     
     def set(self,key,val,ex=None):
         with self.lock:
+            ex = self.default_expiry
             self.data[key] = val
             self.types[key] = "string"
             if ex and isinstance(ex,int):
@@ -89,6 +91,7 @@ class CACHE_STORE:
             response = stream.xadd(Fields,id,maxLen,Approx)
             self.data[key] = stream
             self.types[key] = "stream"
+            self.expiry[key] = time.time() + self.default_expiry
             return response
             
     
