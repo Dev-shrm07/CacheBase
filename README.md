@@ -4,7 +4,7 @@
 
 </div>
 
-A distributed in-memory key-value store with built-in Raft consensus algorithm for fault tolerance and strong consistency. CacheBase provides Redis-compatible commands with distributed capabilities. It supports string type keys along with streams, to store and read data streams with features like xadd, xread with blocking etc.
+A distributed in-memory key-value store with built-in Raft consensus algorithm for fault tolerance and strong consistency, built using raw TCP sockets and RPCs. CacheBase provides Redis-compatible commands with distributed capabilities. It supports string type keys along with streams, to store and read data streams with features like xadd, xread with blocking etc.
 
 ## Features
 
@@ -26,6 +26,8 @@ CacheBase implements the Raft consensus algorithm to maintain consistency across
 - **Leader Node**: Handles all write operations and replicates to followers
 - **Follower Nodes**: Replicate data from leader and can serve read operations
 - **Candidate Nodes**: Participate in leader election when needed
+- **Custom TCP Layer**: Communication between nodes and clients is built from scratch over raw TCP sockets, implementing RESP parsing and request handling manually without external Redis libraries.
+
 
 ### Raft Implementation
 - **Leader Election**: Automatic selection of leader nodes with randomized timeouts
