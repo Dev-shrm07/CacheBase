@@ -39,7 +39,7 @@ CacheBase implements the Raft consensus algorithm to maintain consistency across
 python run_single_node.py
 ```
 
-### Cluster Setup (3 nodes)
+### Cluster Setup 
 ```bash
 python run_cluster.py
 ```
@@ -193,10 +193,10 @@ Read operations (`GET`, `XRANGE`, `XREAD`) can be served by any node and reflect
 
 ### Multi Node Cluster
 
-<div style="display: flex; gap: 10px;">
-  ![Cluster Logs](https://github.com/user-attachments/assets/e34d8a4e-7345-48b3-a6af-d0c622d1e8a4)
-  ![Data Replication across nodes](https://github.com/user-attachments/assets/19134774-8780-4394-b472-da24c9590aec)
-</div>
+![Cluster Logs](https://github.com/user-attachments/assets/e34d8a4e-7345-48b3-a6af-d0c622d1e8a4)
+ 
+![Data Replication across nodes](https://github.com/user-attachments/assets/19134774-8780-4394-b472-da24c9590aec)
+
 
 
 ## Contributing
