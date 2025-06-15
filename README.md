@@ -193,8 +193,7 @@ Read operations (`GET`, `XRANGE`, `XREAD`) can be served by any node and reflect
 
 ### Multi Node Cluster
 
-
-![Cluster Demo](https://github.com/user-attachments/assets/6b36ae16-aac1-445b-898e-2f0f0498c120)
+![Cluster Demo](https://github.com/user-attachments/assets/5c6c46a7-7c9f-4406-b157-53721b13bb99)
 
 
 ## Contributing
