@@ -186,13 +186,17 @@ Read operations (`GET`, `XRANGE`, `XREAD`) can be served by any node and reflect
 
 
 
-### CacheBase Architecture
+### Single Node Demo
 
-![CacheBase Architecture](path/to/your/architecture-diagram.png)
+![Single Node Demo](https://github.com/user-attachments/assets/7c2db2a3-6cba-4cc2-9ab5-5f79ee92dd3d)
 
-### Performance Dashboard
 
-![CacheBase Performance](path/to/your/performance-dashboard.png)
+### Multi Node Cluster
+
+<div style="display: flex; gap: 10px;">
+  ![Cluster Logs](https://github.com/user-attachments/assets/e34d8a4e-7345-48b3-a6af-d0c622d1e8a4)
+  ![Data Replication across nodes](https://github.com/user-attachments/assets/19134774-8780-4394-b472-da24c9590aec)
+</div>
 
 
 ## Contributing
